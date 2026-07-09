@@ -219,6 +219,10 @@
   @keyframes slideup { from { transform: translateY(24px); opacity:.4; } to { transform: none; opacity:1; } }
   .modal h2 { font-family: var(--font-display); font-size: 18px; margin: 0 0 4px; }
   .modal p.sub { font-size: 13.5px; color: var(--text-dim); margin: 0 0 16px; }
+  .elapsed-display {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 34px; font-weight: 700;
+    text-align: center; margin: 4px 0 10px; color: var(--accent);
+  }
   .modal label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); font-weight: 700; display:block; margin: 14px 0 6px; }
   .modal input[type=text], .modal input[type=number], .modal input[type=date], .modal input[type=time], .modal select, .modal textarea {
     width: 100%; padding: 11px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);
@@ -370,8 +374,10 @@
 <div class="modal-backdrop" id="switchModal">
   <div class="modal">
     <h2>What were you doing?</h2>
+    <div class="elapsed-display" id="switchElapsed">00:00:00</div>
     <p class="sub" id="switchSub"></p>
-    <div class="chip-grid" id="switchChipGrid"></div>
+    <label>Category</label>
+    <select id="switchCategorySelect"></select>
     <label>Or describe it</label>
     <input type="text" id="switchCustomText" placeholder="e.g. Grocery shopping">
     <div class="modal-actions">
@@ -422,6 +428,18 @@
       <button class="btn-confirm" id="blockSave">Save</button>
     </div>
     <button class="btn-secondary" id="blockDelete" style="display:none;margin-top:14px;">Delete block</button>
+  </div>
+</div>
+
+<!-- Confirm modal (replaces native confirm() which is unreliable in installed PWAs) -->
+<div class="modal-backdrop" id="confirmModal">
+  <div class="modal">
+    <h2 id="confirmTitle">Confirm</h2>
+    <p class="sub" id="confirmSub"></p>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="confirmCancelBtn">Cancel</button>
+      <button class="btn-confirm danger" id="confirmOkBtn">Delete</button>
+    </div>
   </div>
 </div>
 
@@ -502,6 +520,24 @@
   }
   document.querySelectorAll('.navbtn').forEach(b => b.addEventListener('click', () => showScreen(b.dataset.screen)));
 
+  /* ---------------- Confirm modal (replaces native confirm()) ---------------- */
+  function showConfirm(message, onConfirm){
+    document.getElementById('confirmSub').textContent = message;
+    const backdrop = document.getElementById('confirmModal');
+    const okBtn = document.getElementById('confirmOkBtn');
+    const cancelBtn = document.getElementById('confirmCancelBtn');
+    backdrop.classList.add('active');
+    function cleanup(){
+      backdrop.classList.remove('active');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+    }
+    function onOk(){ cleanup(); onConfirm(); }
+    function onCancel(){ cleanup(); }
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+  }
+
   /* ---------------- Toast ---------------- */
   let toastTimer;
   function toast(msg){
@@ -573,24 +609,15 @@
 
   /* ---------------- Switch / reassign modal ---------------- */
   let pendingNewCatId = null;
-  function openSwitchModal(newCatId){
+  function openSwitchModal(newCatId, isFinish){
     pendingNewCatId = newCatId;
+    document.getElementById('switchElapsed').textContent = fmtHMS(Date.now() - current.start);
     const sub = document.getElementById('switchSub');
-    sub.textContent = `What were you doing from ${fmtTime(current.start)} to now (${catById(newCatId).name} next)?`;
-    const grid = document.getElementById('switchChipGrid');
-    grid.innerHTML = '';
-    categories.forEach(c => {
-      const chip = document.createElement('button');
-      chip.className = 'chip' + (c.id === current.categoryId ? ' active' : '');
-      chip.innerHTML = `<span class="dot" style="background:${c.color}"></span>${c.name}`;
-      chip.dataset.catId = c.id;
-      chip.addEventListener('click', () => {
-        grid.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));
-        chip.classList.add('active');
-        document.getElementById('switchCustomText').value = '';
-      });
-      grid.appendChild(chip);
-    });
+    sub.textContent = isFinish
+      ? `That's how long you tracked. What was it?`
+      : `That's how long you tracked. What was it? (${catById(newCatId).name} next)`;
+    const select = document.getElementById('switchCategorySelect');
+    select.innerHTML = categories.map(c => `<option value="${c.id}" ${c.id===current.categoryId?'selected':''}>${c.name}</option>`).join('');
     document.getElementById('switchCustomText').value = '';
     document.getElementById('switchModal').classList.add('active');
   }
@@ -599,7 +626,7 @@
   });
   document.getElementById('switchConfirm').addEventListener('click', () => {
     const custom = document.getElementById('switchCustomText').value.trim();
-    let closeCatId = document.querySelector('#switchChipGrid .chip.active')?.dataset.catId || current.categoryId;
+    let closeCatId = document.getElementById('switchCategorySelect').value || current.categoryId;
     if (custom){
       const newCat = { id: 'c_'+uid(), name: custom, type: 'neutral', color: SWATCHES[Math.floor(Math.random()*SWATCHES.length)], goal: null };
       categories.push(newCat); save(LS_CATS, categories);
@@ -624,10 +651,7 @@
   }
 
   document.getElementById('finishBtn').addEventListener('click', () => {
-    closeCurrentBlock(current.categoryId);
-    startNewBlock('untracked');
-    toast('Task closed. Untracked time is running.');
-    renderAll();
+    openSwitchModal('untracked', true);
   });
 
   /* ---------------- Timer tick ---------------- */
@@ -928,12 +952,19 @@
     list.innerHTML = '';
     categories.forEach(c => {
       const row = document.createElement('div'); row.className = 'cat-row';
+      row.style.cursor = c.locked ? 'default' : 'pointer';
       row.innerHTML = `
         <span class="dot" style="background:${c.color}"></span>
         <div class="info"><div class="name">${c.name}</div><div class="type">${c.type}${c.goal?' · goal '+c.goal+'m/day':''}</div></div>
-        ${c.locked ? '' : '<button data-edit>✎</button>'}
+        ${c.locked ? '' : '<button data-del title="Delete">✕</button>'}
       `;
-      if (!c.locked) row.querySelector('[data-edit]').addEventListener('click', () => openCatModal(c));
+      if (!c.locked){
+        row.addEventListener('click', () => openCatModal(c));
+        row.querySelector('[data-del]').addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteCategory(c.id);
+        });
+      }
       list.appendChild(row);
     });
   }
@@ -988,16 +1019,18 @@
     toast('Category saved');
     renderAll();
   });
-  document.getElementById('catDelete').addEventListener('click', () => {
-    if (!confirm('Delete this category? Its past blocks will be reassigned to Untracked.')) return;
-    categories = categories.filter(c => c.id !== editingCatId);
-    blocks.forEach(b => { if (b.categoryId === editingCatId) b.categoryId = 'untracked'; });
-    if (current.categoryId === editingCatId) current.categoryId = 'untracked';
-    save(LS_CATS, categories); save(LS_BLOCKS, blocks); save(LS_CURRENT, current);
-    document.getElementById('catModal').classList.remove('active');
-    toast('Category deleted');
-    renderAll();
-  });
+  function deleteCategory(catId){
+    showConfirm('Delete this category? Its past blocks will be reassigned to Untracked.', () => {
+      categories = categories.filter(c => c.id !== catId);
+      blocks.forEach(b => { if (b.categoryId === catId) b.categoryId = 'untracked'; });
+      if (current.categoryId === catId) current.categoryId = 'untracked';
+      save(LS_CATS, categories); save(LS_BLOCKS, blocks); save(LS_CURRENT, current);
+      document.getElementById('catModal').classList.remove('active');
+      toast('Category deleted');
+      renderAll();
+    });
+  }
+  document.getElementById('catDelete').addEventListener('click', () => deleteCategory(editingCatId));
   document.getElementById('addCatBtn').addEventListener('click', () => openCatModal(null));
 
   /* ---------------- Export / Import / Reset ---------------- */
@@ -1019,22 +1052,24 @@
       try {
         const data = JSON.parse(reader.result);
         if (!data.categories || !data.blocks) throw new Error('Invalid file');
-        if (!confirm('This will replace all current data with the backup. Continue?')) return;
-        categories = data.categories; blocks = data.blocks; current = data.current || { categoryId: 'untracked', start: Date.now() };
-        save(LS_CATS, categories); save(LS_BLOCKS, blocks); save(LS_CURRENT, current);
-        toast('Backup restored');
-        renderAll();
+        showConfirm('This will replace all current data with the backup. Continue?', () => {
+          categories = data.categories; blocks = data.blocks; current = data.current || { categoryId: 'untracked', start: Date.now() };
+          save(LS_CATS, categories); save(LS_BLOCKS, blocks); save(LS_CURRENT, current);
+          toast('Backup restored');
+          renderAll();
+        });
       } catch(err){ toast('Could not read that file'); }
     };
     reader.readAsText(file);
     e.target.value = '';
   });
   document.getElementById('resetBtn').addEventListener('click', () => {
-    if (!confirm('This deletes all categories and tracked time on this device. This cannot be undone. Continue?')) return;
-    categories = DEFAULT_CATEGORIES.slice(); blocks = []; current = { categoryId: 'untracked', start: Date.now() };
-    save(LS_CATS, categories); save(LS_BLOCKS, blocks); save(LS_CURRENT, current);
-    toast('All data reset');
-    renderAll();
+    showConfirm('This deletes all categories and tracked time on this device. This cannot be undone. Continue?', () => {
+      categories = DEFAULT_CATEGORIES.slice(); blocks = []; current = { categoryId: 'untracked', start: Date.now() };
+      save(LS_CATS, categories); save(LS_BLOCKS, blocks); save(LS_CURRENT, current);
+      toast('All data reset');
+      renderAll();
+    });
   });
 
   /* ---------------- Render all ---------------- */
