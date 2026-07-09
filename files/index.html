@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#14161A">
+<title>Flowtime — Time Awareness Tracker</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="See where your time actually goes. The timer never stops — just like time itself.">
+<style>
+  :root {
+    --bg: #14161A;
+    --surface: #1B1F24;
+    --surface-2: #23272D;
+    --border: #2A2F36;
+    --text: #E7ECEC;
+    --text-dim: #8B9299;
+    --accent: #6C82FF;
+    --productive: #34B87C;
+    --waste: #E1596B;
+    --neutral-cat: #9A9488;
+    --radius: 14px;
+    --radius-sm: 9px;
+    --font-display: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", monospace;
+    color-scheme: dark;
+  }
+  [data-theme="light"] {
+    --bg: #F4F6F5;
+    --surface: #FFFFFF;
+    --surface-2: #EBEEEA;
+    --border: #DCE1DC;
+    --text: #14181A;
+    --text-dim: #676E6A;
+    --accent: #4152C9;
+    --productive: #1E8A5C;
+    --waste: #C23A50;
+    --neutral-cat: #756F63;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    overscroll-behavior-y: none;
+    transition: background .25s ease, color .25s ease;
+  }
+  #app { max-width: 560px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+
+  header.topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 20px 8px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 8px; }
+  .brand .mark { width: 10px; height: 10px; border-radius: 3px; background: var(--accent); }
+  .brand h1 { font-family: var(--font-display); font-size: 17px; font-weight: 800; letter-spacing: .2px; margin: 0; }
+  .theme-toggle {
+    display: flex; align-items: center; gap: 6px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 999px; padding: 4px; cursor: pointer;
+  }
+  .theme-toggle button {
+    border: none; background: transparent; color: var(--text-dim); font-size: 15px;
+    width: 30px; height: 30px; border-radius: 999px; cursor: pointer;
+  }
+  .theme-toggle button.active { background: var(--surface-2); color: var(--text); }
+
+  main { flex: 1; padding: 4px 20px 100px; }
+  .screen { display: none; }
+  .screen.active { display: block; animation: fadein .2s ease; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(4px);} to { opacity: 1; transform: none; } }
+
+  /* ---- Today screen ---- */
+  .timer-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 28px 22px 22px; margin-top: 10px; text-align: center; position: relative; overflow: hidden;
+  }
+  .timer-card .cat-label {
+    font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-dim);
+    margin-bottom: 6px; font-weight: 600;
+  }
+  .timer-card .cat-name { font-family: var(--font-display); font-size: 22px; font-weight: 800; margin-bottom: 14px; }
+  .timer-display {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 52px; font-weight: 600;
+    letter-spacing: 1px; line-height: 1;
+  }
+  .timer-dot { display:inline-block; width:9px; height:9px; border-radius:50%; background: var(--productive); margin-right:10px; vertical-align: middle; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .finish-btn {
+    margin-top: 18px; width: 100%; padding: 13px; border-radius: var(--radius-sm); border: none;
+    background: var(--surface-2); color: var(--text); font-size: 15px; font-weight: 700; cursor: pointer;
+    border: 1px solid var(--border);
+  }
+  .finish-btn:active { transform: scale(.98); }
+
+  .section-label {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim);
+    font-weight: 700; margin: 26px 0 10px;
+  }
+
+  .chip-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .chip {
+    display: flex; align-items: center; gap: 9px; padding: 14px 12px; border-radius: var(--radius-sm);
+    background: var(--surface); border: 1px solid var(--border); cursor: pointer; font-size: 14.5px; font-weight: 600;
+    color: var(--text); text-align: left;
+  }
+  .chip:active { transform: scale(.97); }
+  .chip .dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .chip.active { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .chip.add-chip { justify-content: center; color: var(--text-dim); border-style: dashed; }
+
+  .ribbon-wrap { margin-top: 8px; }
+  .ribbon {
+    display: flex; width: 100%; height: 34px; border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .ribbon .seg { height: 100%; min-width: 2px; }
+  .ribbon .seg.current { animation: pulse 1.6s infinite; }
+  .ribbon-empty { font-size: 13px; color: var(--text-dim); padding: 10px 0; text-align: center; }
+
+  .balance-row { display: flex; gap: 10px; margin-top: 14px; }
+  .balance-card { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; }
+  .balance-card .k { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); font-weight: 700; }
+  .balance-card .v { font-family: var(--font-mono); font-size: 22px; font-weight: 700; margin-top: 4px; }
+  .balance-card.productive .v { color: var(--productive); }
+  .balance-card.waste .v { color: var(--waste); }
+
+  /* ---- History ---- */
+  .date-nav { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .date-nav button { background: var(--surface); border: 1px solid var(--border); color: var(--text); width: 38px; height: 38px; border-radius: 999px; font-size: 16px; cursor: pointer; }
+  .date-nav .date-label { font-family: var(--font-display); font-weight: 800; font-size: 16px; }
+  .block-item { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px; }
+  .block-item .dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+  .block-item .info { flex: 1; min-width: 0; }
+  .block-item .name { font-weight: 700; font-size: 14.5px; }
+  .block-item .time { font-size: 12.5px; color: var(--text-dim); font-family: var(--font-mono); }
+  .block-item .dur { font-family: var(--font-mono); font-weight: 700; font-size: 13px; }
+  .block-item .edit-btn { background: none; border: none; color: var(--text-dim); font-size: 16px; cursor: pointer; padding: 4px; }
+  .empty-state { text-align: center; color: var(--text-dim); font-size: 14px; padding: 40px 10px; }
+
+  .btn-secondary {
+    width: 100%; padding: 12px; border-radius: var(--radius-sm); border: 1px dashed var(--border);
+    background: transparent; color: var(--text-dim); font-weight: 700; font-size: 14px; cursor: pointer; margin-top: 6px;
+  }
+
+  /* ---- Stats ---- */
+  .period-tabs { display: flex; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 4px; margin-top: 8px; }
+  .period-tabs button { flex: 1; border: none; background: transparent; color: var(--text-dim); font-weight: 700; font-size: 13px; padding: 9px 0; border-radius: 999px; cursor: pointer; }
+  .period-tabs button.active { background: var(--surface-2); color: var(--text); }
+
+  .stat-bar-row { margin-bottom: 12px; }
+  .stat-bar-row .top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+  .stat-bar-row .top .name { font-weight: 700; }
+  .stat-bar-row .top .val { color: var(--text-dim); font-family: var(--font-mono); }
+  .stat-bar-track { height: 9px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .stat-bar-fill { height: 100%; border-radius: 999px; }
+
+  .compare-bar { display: flex; height: 26px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); margin-top: 6px; }
+  .compare-legend { display: flex; gap: 16px; margin-top: 8px; font-size: 12.5px; color: var(--text-dim); }
+  .compare-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 3px; }
+
+  .heatmap-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 10px; }
+  .heat-cell { aspect-ratio: 1; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--text-dim); border: 1px solid var(--border); }
+  .heat-cell.pad { border: none; }
+
+  .delta-note { font-size: 13px; color: var(--text-dim); margin-top: 10px; }
+  .delta-note b { color: var(--text); }
+
+  /* ---- Settings ---- */
+  .cat-row { display: flex; align-items: center; gap: 10px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px; }
+  .cat-row .dot { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+  .cat-row .info { flex: 1; }
+  .cat-row .name { font-weight: 700; font-size: 14.5px; }
+  .cat-row .type { font-size: 11.5px; color: var(--text-dim); text-transform: capitalize; }
+  .cat-row button { background: none; border: none; color: var(--text-dim); font-size: 16px; cursor: pointer; padding: 4px 6px; }
+
+  .settings-item { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .settings-item:last-child { border-bottom: none; }
+  .settings-item .label { font-weight: 700; font-size: 14.5px; }
+  .settings-item .desc { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+  .settings-btn { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 9px 14px; border-radius: var(--radius-sm); font-weight: 700; font-size: 13.5px; cursor: pointer; }
+  .settings-btn.danger { color: var(--waste); }
+
+  /* ---- Bottom nav ---- */
+  nav.bottomnav {
+    position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface); border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom); z-index: 20;
+  }
+  .navrow { max-width: 560px; margin: 0 auto; display: flex; }
+  .navrow button {
+    flex: 1; background: none; border: none; padding: 11px 4px 9px; color: var(--text-dim);
+    display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700;
+    letter-spacing: .3px; cursor: pointer;
+  }
+  .navrow button .ic { font-size: 19px; }
+  .navrow button.active { color: var(--accent); }
+
+  /* ---- Modal ---- */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: flex-end;
+    justify-content: center; z-index: 50;
+  }
+  .modal-backdrop.active { display: flex; }
+  .modal {
+    background: var(--surface); border-radius: 18px 18px 0 0; width: 100%; max-width: 560px;
+    padding: 22px 20px calc(22px + env(safe-area-inset-bottom)); max-height: 84vh; overflow-y: auto;
+    animation: slideup .22s ease;
+  }
+  @keyframes slideup { from { transform: translateY(24px); opacity:.4; } to { transform: none; opacity:1; } }
+  .modal h2 { font-family: var(--font-display); font-size: 18px; margin: 0 0 4px; }
+  .modal p.sub { font-size: 13.5px; color: var(--text-dim); margin: 0 0 16px; }
+  .modal label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); font-weight: 700; display:block; margin: 14px 0 6px; }
+  .modal input[type=text], .modal input[type=number], .modal input[type=date], .modal input[type=time], .modal select, .modal textarea {
+    width: 100%; padding: 11px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); font-size: 14.5px; font-family: var(--font-body);
+  }
+  .modal .row2 { display: flex; gap: 10px; }
+  .modal .row2 > div { flex: 1; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .modal-actions button { flex: 1; padding: 13px; border-radius: var(--radius-sm); border: none; font-weight: 700; font-size: 14.5px; cursor: pointer; }
+  .btn-cancel { background: var(--surface-2); color: var(--text); border: 1px solid var(--border) !important; }
+  .btn-confirm { background: var(--accent); color: #fff; }
+  .btn-confirm.danger { background: var(--waste); }
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .swatch { width: 26px; height: 26px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
+  .swatch.sel { border-color: var(--text); }
+  .type-toggle { display: flex; gap: 8px; margin-top: 6px; }
+  .type-toggle button { flex: 1; padding: 9px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim); font-weight: 700; font-size: 12.5px; cursor: pointer; }
+  .type-toggle button.sel { color: #fff; border-color: transparent; }
+
+  .toast {
+    position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background: var(--surface-2);
+    border: 1px solid var(--border); color: var(--text); padding: 11px 18px; border-radius: 999px; font-size: 13.5px;
+    font-weight: 600; z-index: 60; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-6px); }
+
+  ::-webkit-scrollbar { width: 0; height: 0; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand"><span class="mark"></span><h1>Flowtime</h1></div>
+    <div class="theme-toggle" id="themeToggle">
+      <button data-theme="light" title="Light">☀</button>
+      <button data-theme="dark" title="Dark">☾</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- TODAY -->
+    <section class="screen active" id="screen-today">
+      <div class="timer-card">
+        <div class="cat-label"><span class="timer-dot"></span>Now tracking</div>
+        <div class="cat-name" id="currentCatName">Untracked</div>
+        <div class="timer-display" id="timerDisplay">00:00:00</div>
+        <button class="finish-btn" id="finishBtn">Finish task</button>
+      </div>
+
+      <div class="section-label">Switch to</div>
+      <div class="chip-grid" id="chipGrid"></div>
+
+      <div class="section-label">Today's flow</div>
+      <div class="ribbon-wrap">
+        <div class="ribbon" id="todayRibbon"></div>
+      </div>
+
+      <div class="balance-row">
+        <div class="balance-card productive"><div class="k">Productive</div><div class="v" id="todayProductive">0m</div></div>
+        <div class="balance-card waste"><div class="k">Wasted</div><div class="v" id="todayWaste">0m</div></div>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="screen" id="screen-history">
+      <div class="date-nav">
+        <button id="histPrev">‹</button>
+        <div class="date-label" id="histDateLabel">Today</div>
+        <button id="histNext">›</button>
+      </div>
+      <div class="section-label">Blocks</div>
+      <div id="historyList"></div>
+      <button class="btn-secondary" id="addManualBlockBtn">+ Add block manually</button>
+    </section>
+
+    <!-- STATS -->
+    <section class="screen" id="screen-stats">
+      <div class="period-tabs" id="periodTabs">
+        <button data-period="day" class="active">Day</button>
+        <button data-period="week">Week</button>
+        <button data-period="month">Month</button>
+        <button data-period="year">Year</button>
+      </div>
+      <div class="date-nav" style="margin-top:14px;">
+        <button id="statPrev">‹</button>
+        <div class="date-label" id="statDateLabel">—</div>
+        <button id="statNext">›</button>
+      </div>
+
+      <div class="section-label">Productive vs wasted</div>
+      <div class="compare-bar" id="compareBar"></div>
+      <div class="compare-legend">
+        <span><span class="legend-dot" style="background:var(--productive)"></span>Productive</span>
+        <span><span class="legend-dot" style="background:var(--neutral-cat)"></span>Neutral</span>
+        <span><span class="legend-dot" style="background:var(--waste)"></span>Wasted</span>
+      </div>
+      <div class="delta-note" id="deltaNote"></div>
+
+      <div class="section-label">By category</div>
+      <div id="statBars"></div>
+
+      <div class="section-label" id="heatmapLabel">This month</div>
+      <div class="heatmap-grid" id="heatmapGrid"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="screen" id="screen-settings">
+      <div class="section-label">Categories</div>
+      <div id="catList"></div>
+      <button class="btn-secondary" id="addCatBtn">+ New category</button>
+
+      <div class="section-label">Data</div>
+      <div class="settings-item">
+        <div><div class="label">Export backup</div><div class="desc">Save all your data as a .json file</div></div>
+        <button class="settings-btn" id="exportBtn">Export</button>
+      </div>
+      <div class="settings-item">
+        <div><div class="label">Import backup</div><div class="desc">Restore from a .json file</div></div>
+        <button class="settings-btn" id="importBtn">Import</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json" style="display:none">
+      <div class="settings-item">
+        <div><div class="label">Reset all data</div><div class="desc">Deletes everything on this device</div></div>
+        <button class="settings-btn danger" id="resetBtn">Reset</button>
+      </div>
+
+      <div class="section-label">About</div>
+      <p style="font-size:12.5px;color:var(--text-dim);line-height:1.6;">
+        Flowtime never stops timing — there's always a category running, even "Untracked".
+        Data lives only on this device (localStorage). Install this page to your home screen
+        for the best experience, and export a backup now and then just in case.
+      </p>
+    </section>
+  </main>
+
+  <nav class="bottomnav">
+    <div class="navrow">
+      <button class="navbtn active" data-screen="today"><span class="ic">◷</span>Today</button>
+      <button class="navbtn" data-screen="history"><span class="ic">≡</span>History</button>
+      <button class="navbtn" data-screen="stats"><span class="ic">▤</span>Stats</button>
+      <button class="navbtn" data-screen="settings"><span class="ic">⚙</span>Settings</button>
+    </div>
+  </nav>
+</div>
+
+<!-- Switch/reassign modal -->
+<div class="modal-backdrop" id="switchModal">
+  <div class="modal">
+    <h2>What were you doing?</h2>
+    <p class="sub" id="switchSub"></p>
+    <div class="chip-grid" id="switchChipGrid"></div>
+    <label>Or describe it</label>
+    <input type="text" id="switchCustomText" placeholder="e.g. Grocery shopping">
+    <div class="modal-actions">
+      <button class="btn-cancel" id="switchCancel">Cancel</button>
+      <button class="btn-confirm" id="switchConfirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Category editor modal -->
+<div class="modal-backdrop" id="catModal">
+  <div class="modal">
+    <h2 id="catModalTitle">New category</h2>
+    <label>Name</label>
+    <input type="text" id="catName" placeholder="e.g. Reading">
+    <label>Type</label>
+    <div class="type-toggle" id="catTypeToggle">
+      <button data-type="productive">Productive</button>
+      <button data-type="neutral">Neutral</button>
+      <button data-type="waste">Wasted</button>
+    </div>
+    <label>Color</label>
+    <div class="swatches" id="catSwatches"></div>
+    <label>Daily goal (minutes, optional)</label>
+    <input type="number" id="catGoal" placeholder="e.g. 60" min="0">
+    <div class="modal-actions">
+      <button class="btn-cancel" id="catCancel">Cancel</button>
+      <button class="btn-confirm" id="catSave">Save</button>
+    </div>
+    <button class="btn-secondary" id="catDelete" style="display:none;margin-top:14px;">Delete category</button>
+  </div>
+</div>
+
+<!-- Block editor modal -->
+<div class="modal-backdrop" id="blockModal">
+  <div class="modal">
+    <h2 id="blockModalTitle">Edit block</h2>
+    <label>Category</label>
+    <select id="blockCategory"></select>
+    <label>Date</label>
+    <input type="date" id="blockDate">
+    <div class="row2">
+      <div><label>Start time</label><input type="time" id="blockStart"></div>
+      <div><label>End time</label><input type="time" id="blockEnd"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="blockCancel">Cancel</button>
+      <button class="btn-confirm" id="blockSave">Save</button>
+    </div>
+    <button class="btn-secondary" id="blockDelete" style="display:none;margin-top:14px;">Delete block</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- Storage ---------------- */
+  const LS_CATS = 'flowtime_categories';
+  const LS_BLOCKS = 'flowtime_blocks';
+  const LS_CURRENT = 'flowtime_current';
+  const LS_THEME = 'flowtime_theme';
+
+  const DEFAULT_CATEGORIES = [
+    { id: 'untracked', name: 'Untracked', type: 'neutral', color: '#9A9488', goal: null, locked: true },
+    { id: 'work',      name: 'Work',      type: 'productive', color: '#34B87C', goal: null },
+    { id: 'learning',  name: 'Learning',  type: 'productive', color: '#3D9BE9', goal: null },
+    { id: 'building',  name: 'Building',  type: 'productive', color: '#8E7CF0', goal: null },
+    { id: 'gym',       name: 'Gym',       type: 'productive', color: '#2FB6A6', goal: null },
+    { id: 'youtube',   name: 'YouTube',   type: 'waste', color: '#E1596B', goal: null },
+    { id: 'tiktok',    name: 'TikTok',    type: 'waste', color: '#E17DA0', goal: null },
+    { id: 'instagram', name: 'Instagram', type: 'waste', color: '#D9668B', goal: null },
+    { id: 'reddit',    name: 'Reddit',    type: 'waste', color: '#E08A3F', goal: null },
+    { id: 'chatgpt',   name: 'ChatGPT',   type: 'neutral', color: '#77C97A', goal: null },
+    { id: 'sleep',     name: 'Sleep',     type: 'neutral', color: '#6C82FF', goal: null },
+    { id: 'break',     name: 'Break',     type: 'neutral', color: '#9A9488', goal: null },
+  ];
+
+  const SWATCHES = ['#34B87C','#3D9BE9','#8E7CF0','#2FB6A6','#E1596B','#E17DA0','#D9668B','#E08A3F','#77C97A','#6C82FF','#9A9488','#F2B84B'];
+
+  function load(key, fallback){
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw === null) return fallback;
+      return JSON.parse(raw);
+    } catch(e){ return fallback; }
+  }
+  function save(key, val){
+    localStorage.setItem(key, JSON.stringify(val));
+  }
+
+  let categories = load(LS_CATS, null) || DEFAULT_CATEGORIES.slice();
+  let blocks = load(LS_BLOCKS, []); // closed blocks: {id, categoryId, start, end}
+  let current = load(LS_CURRENT, null); // {categoryId, start}
+  if (!current) {
+    current = { categoryId: 'untracked', start: Date.now() };
+    save(LS_CURRENT, current);
+  }
+  if (!load(LS_CATS, null)) save(LS_CATS, categories);
+
+  function catById(id){ return categories.find(c => c.id === id) || categories[0]; }
+  function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+  /* ---------------- Theme ---------------- */
+  function applyTheme(t){
+    document.documentElement.setAttribute('data-theme', t);
+    document.querySelectorAll('#themeToggle button').forEach(b => b.classList.toggle('active', b.dataset.theme === t));
+    const meta = document.querySelector('meta[name=theme-color]');
+    meta.setAttribute('content', t === 'light' ? '#F4F6F5' : '#14161A');
+  }
+  let theme = load(LS_THEME, null) || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  applyTheme(theme);
+  document.getElementById('themeToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    theme = btn.dataset.theme; save(LS_THEME, theme); applyTheme(theme);
+  });
+
+  /* ---------------- Navigation ---------------- */
+  const screens = ['today','history','stats','settings'];
+  function showScreen(name){
+    screens.forEach(s => document.getElementById('screen-'+s).classList.toggle('active', s === name));
+    document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.screen === name));
+    if (name === 'history') renderHistory();
+    if (name === 'stats') renderStats();
+    if (name === 'settings') renderSettings();
+  }
+  document.querySelectorAll('.navbtn').forEach(b => b.addEventListener('click', () => showScreen(b.dataset.screen)));
+
+  /* ---------------- Toast ---------------- */
+  let toastTimer;
+  function toast(msg){
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+
+  /* ---------------- Time helpers ---------------- */
+  function fmtHMS(ms){
+    const s = Math.floor(ms/1000);
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+    return [h,m,sec].map(v => String(v).padStart(2,'0')).join(':');
+  }
+  function fmtMin(ms){
+    const mins = Math.round(ms/60000);
+    if (mins < 60) return mins + 'm';
+    const h = Math.floor(mins/60), m = mins%60;
+    return h + 'h ' + (m ? m+'m' : '');
+  }
+  function fmtTime(ts){
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  }
+  function dayKey(ts){
+    const d = new Date(ts);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  function startOfDay(ts){ const d = new Date(ts); d.setHours(0,0,0,0); return d.getTime(); }
+  function addDays(ts, n){ const d = new Date(ts); d.setDate(d.getDate()+n); return d.getTime(); }
+
+  /* Split a block into per-day segments (for ribbon/stats across midnight) */
+  function segmentsForDay(dayStartTs){
+    const dayEnd = addDays(dayStartTs, 1);
+    const segs = [];
+    const all = blocks.concat([{ id:'current', categoryId: current.categoryId, start: current.start, end: Date.now() }]);
+    for (const b of all){
+      const s = Math.max(b.start, dayStartTs);
+      const e = Math.min(b.end, dayEnd);
+      if (e > s) segs.push({ categoryId: b.categoryId, start: s, end: e, isCurrent: b.id === 'current' });
+    }
+    segs.sort((a,b) => a.start - b.start);
+    return segs;
+  }
+
+  /* ---------------- Render: chip grid (Today) ---------------- */
+  function renderChipGrid(){
+    const grid = document.getElementById('chipGrid');
+    grid.innerHTML = '';
+    categories.forEach(c => {
+      const chip = document.createElement('button');
+      chip.className = 'chip' + (c.id === current.categoryId ? ' active' : '');
+      chip.innerHTML = `<span class="dot" style="background:${c.color}"></span>${c.name}`;
+      chip.addEventListener('click', () => onCategoryChipClick(c.id));
+      grid.appendChild(chip);
+    });
+    const addChip = document.createElement('button');
+    addChip.className = 'chip add-chip';
+    addChip.textContent = '+ New category';
+    addChip.addEventListener('click', () => openCatModal(null));
+    grid.appendChild(addChip);
+  }
+
+  function onCategoryChipClick(newCatId){
+    if (newCatId === current.categoryId) { toast("You're already tracking " + catById(newCatId).name); return; }
+    openSwitchModal(newCatId);
+  }
+
+  /* ---------------- Switch / reassign modal ---------------- */
+  let pendingNewCatId = null;
+  function openSwitchModal(newCatId){
+    pendingNewCatId = newCatId;
+    const sub = document.getElementById('switchSub');
+    sub.textContent = `What were you doing from ${fmtTime(current.start)} to now (${catById(newCatId).name} next)?`;
+    const grid = document.getElementById('switchChipGrid');
+    grid.innerHTML = '';
+    categories.forEach(c => {
+      const chip = document.createElement('button');
+      chip.className = 'chip' + (c.id === current.categoryId ? ' active' : '');
+      chip.innerHTML = `<span class="dot" style="background:${c.color}"></span>${c.name}`;
+      chip.dataset.catId = c.id;
+      chip.addEventListener('click', () => {
+        grid.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));
+        chip.classList.add('active');
+        document.getElementById('switchCustomText').value = '';
+      });
+      grid.appendChild(chip);
+    });
+    document.getElementById('switchCustomText').value = '';
+    document.getElementById('switchModal').classList.add('active');
+  }
+  document.getElementById('switchCancel').addEventListener('click', () => {
+    document.getElementById('switchModal').classList.remove('active');
+  });
+  document.getElementById('switchConfirm').addEventListener('click', () => {
+    const custom = document.getElementById('switchCustomText').value.trim();
+    let closeCatId = document.querySelector('#switchChipGrid .chip.active')?.dataset.catId || current.categoryId;
+    if (custom){
+      const newCat = { id: 'c_'+uid(), name: custom, type: 'neutral', color: SWATCHES[Math.floor(Math.random()*SWATCHES.length)], goal: null };
+      categories.push(newCat); save(LS_CATS, categories);
+      closeCatId = newCat.id;
+    }
+    closeCurrentBlock(closeCatId);
+    startNewBlock(pendingNewCatId);
+    document.getElementById('switchModal').classList.remove('active');
+    renderAll();
+  });
+
+  function closeCurrentBlock(categoryId){
+    const now = Date.now();
+    if (now > current.start){
+      blocks.push({ id: uid(), categoryId: categoryId, start: current.start, end: now });
+      save(LS_BLOCKS, blocks);
+    }
+  }
+  function startNewBlock(categoryId){
+    current = { categoryId, start: Date.now() };
+    save(LS_CURRENT, current);
+  }
+
+  document.getElementById('finishBtn').addEventListener('click', () => {
+    closeCurrentBlock(current.categoryId);
+    startNewBlock('untracked');
+    toast('Task closed. Untracked time is running.');
+    renderAll();
+  });
+
+  /* ---------------- Timer tick ---------------- */
+  function renderTimer(){
+    document.getElementById('currentCatName').textContent = catById(current.categoryId).name;
+    document.getElementById('timerDisplay').textContent = fmtHMS(Date.now() - current.start);
+  }
+  setInterval(renderTimer, 1000);
+
+  /* ---------------- Today ribbon + balance ---------------- */
+  function renderTodayRibbon(){
+    const ribbon = document.getElementById('todayRibbon');
+    const dayStart = startOfDay(Date.now());
+    const segs = segmentsForDay(dayStart);
+    ribbon.innerHTML = '';
+    if (!segs.length){ ribbon.outerHTML = '<div class="ribbon-empty" id="todayRibbon">Nothing tracked yet today.</div>'; return; }
+    const totalSpan = Date.now() - dayStart;
+    segs.forEach(s => {
+      const el = document.createElement('div');
+      el.className = 'seg' + (s.isCurrent ? ' current' : '');
+      el.style.background = catById(s.categoryId).color;
+      el.style.width = (100 * (s.end - s.start) / totalSpan) + '%';
+      el.title = catById(s.categoryId).name;
+      ribbon.appendChild(el);
+    });
+
+    let prod = 0, waste = 0;
+    segs.forEach(s => {
+      const c = catById(s.categoryId); const dur = s.end - s.start;
+      if (c.type === 'productive') prod += dur; else if (c.type === 'waste') waste += dur;
+    });
+    document.getElementById('todayProductive').textContent = fmtMin(prod);
+    document.getElementById('todayWaste').textContent = fmtMin(waste);
+  }
+
+  /* ---------------- History screen ---------------- */
+  let histDayStart = startOfDay(Date.now());
+  function renderHistory(){
+    const todayStart = startOfDay(Date.now());
+    document.getElementById('histDateLabel').textContent = histDayStart === todayStart ? 'Today' :
+      new Date(histDayStart).toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'});
+    document.getElementById('histNext').disabled = histDayStart >= todayStart;
+    document.getElementById('histNext').style.opacity = histDayStart >= todayStart ? .35 : 1;
+
+    const list = document.getElementById('historyList');
+    const segs = segmentsForDay(histDayStart).filter(s => !s.isCurrent || true);
+    // use raw blocks (not split) that belong wholly/partially to this day for editing; show display via segments
+    list.innerHTML = '';
+    if (!segs.length){ list.innerHTML = '<div class="empty-state">No blocks this day.</div>'; return; }
+    segs.slice().reverse().forEach(s => {
+      const c = catById(s.categoryId);
+      const item = document.createElement('div');
+      item.className = 'block-item';
+      item.innerHTML = `
+        <span class="dot" style="background:${c.color}"></span>
+        <div class="info">
+          <div class="name">${c.name}${s.isCurrent ? ' (running)' : ''}</div>
+          <div class="time">${fmtTime(s.start)} – ${s.isCurrent ? 'now' : fmtTime(s.end)}</div>
+        </div>
+        <div class="dur">${fmtMin(s.end - s.start)}</div>
+        ${s.isCurrent ? '' : '<button class="edit-btn" data-edit="1">✎</button>'}
+      `;
+      if (!s.isCurrent){
+        item.querySelector('[data-edit]').addEventListener('click', () => openBlockModal(findOriginalBlock(s)));
+      }
+      list.appendChild(item);
+    });
+  }
+  function findOriginalBlock(seg){
+    // find the actual stored block whose id matches (segments come from blocks array directly for non-current)
+    return blocks.find(b => b.start <= seg.start && b.end >= seg.end && b.categoryId === seg.categoryId) || null;
+  }
+  document.getElementById('histPrev').addEventListener('click', () => { histDayStart = addDays(histDayStart, -1); renderHistory(); });
+  document.getElementById('histNext').addEventListener('click', () => {
+    if (histDayStart < startOfDay(Date.now())) { histDayStart = addDays(histDayStart, 1); renderHistory(); }
+  });
+
+  /* ---------------- Block modal (manual add / edit) ---------------- */
+  let editingBlockId = null;
+  function fillCategorySelect(sel, selectedId){
+    sel.innerHTML = categories.map(c => `<option value="${c.id}" ${c.id===selectedId?'selected':''}>${c.name}</option>`).join('');
+  }
+  function openBlockModal(block){
+    editingBlockId = block ? block.id : null;
+    document.getElementById('blockModalTitle').textContent = block ? 'Edit block' : 'Add block manually';
+    fillCategorySelect(document.getElementById('blockCategory'), block ? block.categoryId : categories[0].id);
+    const d = block ? new Date(block.start) : new Date(histDayStart + 9*3600000);
+    const e = block ? new Date(block.end) : new Date(histDayStart + 10*3600000);
+    document.getElementById('blockDate').value = dayKey(d.getTime());
+    document.getElementById('blockStart').value = String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    document.getElementById('blockEnd').value = String(e.getHours()).padStart(2,'0')+':'+String(e.getMinutes()).padStart(2,'0');
+    document.getElementById('blockDelete').style.display = block ? 'block' : 'none';
+    document.getElementById('blockModal').classList.add('active');
+  }
+  document.getElementById('addManualBlockBtn').addEventListener('click', () => openBlockModal(null));
+  document.getElementById('blockCancel').addEventListener('click', () => document.getElementById('blockModal').classList.remove('active'));
+  document.getElementById('blockSave').addEventListener('click', () => {
+    const catId = document.getElementById('blockCategory').value;
+    const dateVal = document.getElementById('blockDate').value;
+    const startVal = document.getElementById('blockStart').value;
+    const endVal = document.getElementById('blockEnd').value;
+    if (!dateVal || !startVal || !endVal) { toast('Fill in all fields'); return; }
+    const start = new Date(dateVal + 'T' + startVal).getTime();
+    let end = new Date(dateVal + 'T' + endVal).getTime();
+    if (end <= start) end += 24*3600000;
+    if (editingBlockId){
+      const b = blocks.find(x => x.id === editingBlockId);
+      if (b){ b.categoryId = catId; b.start = start; b.end = end; }
+    } else {
+      blocks.push({ id: uid(), categoryId: catId, start, end });
+    }
+    save(LS_BLOCKS, blocks);
+    document.getElementById('blockModal').classList.remove('active');
+    toast('Block saved');
+    renderHistory(); renderTodayRibbon();
+  });
+  document.getElementById('blockDelete').addEventListener('click', () => {
+    blocks = blocks.filter(b => b.id !== editingBlockId);
+    save(LS_BLOCKS, blocks);
+    document.getElementById('blockModal').classList.remove('active');
+    toast('Block deleted');
+    renderHistory(); renderTodayRibbon();
+  });
+
+  /* ---------------- Stats screen ---------------- */
+  let statPeriod = 'day';
+  let statAnchor = Date.now(); // anchor date within current period
+
+  document.getElementById('periodTabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    statPeriod = btn.dataset.period; statAnchor = Date.now();
+    document.querySelectorAll('#periodTabs button').forEach(b => b.classList.toggle('active', b === btn));
+    renderStats();
+  });
+  document.getElementById('statPrev').addEventListener('click', () => { shiftStatAnchor(-1); renderStats(); });
+  document.getElementById('statNext').addEventListener('click', () => { shiftStatAnchor(1); renderStats(); });
+
+  function shiftStatAnchor(dir){
+    const d = new Date(statAnchor);
+    if (statPeriod === 'day') d.setDate(d.getDate() + dir);
+    else if (statPeriod === 'week') d.setDate(d.getDate() + dir*7);
+    else if (statPeriod === 'month') d.setMonth(d.getMonth() + dir);
+    else d.setFullYear(d.getFullYear() + dir);
+    statAnchor = d.getTime();
+  }
+
+  function periodRange(){
+    const d = new Date(statAnchor);
+    if (statPeriod === 'day'){
+      const s = startOfDay(statAnchor); return [s, addDays(s,1)];
+    }
+    if (statPeriod === 'week'){
+      const day = (d.getDay()+6)%7; // Monday=0
+      const s = startOfDay(addDays(statAnchor, -day));
+      return [s, addDays(s,7)];
+    }
+    if (statPeriod === 'month'){
+      const s = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+      const e = new Date(d.getFullYear(), d.getMonth()+1, 1).getTime();
+      return [s,e];
+    }
+    const s = new Date(d.getFullYear(),0,1).getTime();
+    const e = new Date(d.getFullYear()+1,0,1).getTime();
+    return [s,e];
+  }
+  function periodLabel(){
+    const [s,e] = periodRange();
+    if (statPeriod === 'day') return new Date(s).toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'});
+    if (statPeriod === 'week') return new Date(s).toLocaleDateString([], {month:'short', day:'numeric'}) + ' – ' + new Date(addDays(e,-1)).toLocaleDateString([], {month:'short', day:'numeric'});
+    if (statPeriod === 'month') return new Date(s).toLocaleDateString([], {month:'long', year:'numeric'});
+    return new Date(s).getFullYear().toString();
+  }
+
+  function aggregate(rangeStart, rangeEnd){
+    const totals = {}; categories.forEach(c => totals[c.id] = 0);
+    let cursor = startOfDay(rangeStart);
+    while (cursor < rangeEnd){
+      segmentsForDay(cursor).forEach(s => {
+        const s2 = Math.max(s.start, rangeStart), e2 = Math.min(s.end, rangeEnd);
+        if (e2 > s2) totals[s.categoryId] = (totals[s.categoryId]||0) + (e2-s2);
+      });
+      cursor = addDays(cursor, 1);
+    }
+    return totals;
+  }
+
+  function renderStats(){
+    document.getElementById('statDateLabel').textContent = periodLabel();
+    const [s,e] = periodRange();
+    const rangeEnd = Math.min(e, Date.now());
+    const totals = aggregate(s, rangeEnd);
+
+    let prod=0, neutral=0, waste=0, grand=0;
+    categories.forEach(c => {
+      const v = totals[c.id]||0; grand += v;
+      if (c.type==='productive') prod+=v; else if (c.type==='waste') waste+=v; else neutral+=v;
+    });
+
+    const compareBar = document.getElementById('compareBar');
+    compareBar.innerHTML = '';
+    if (grand === 0){ compareBar.innerHTML = '<div class="ribbon-empty" style="width:100%">No data for this period yet.</div>'; }
+    else {
+      [['productive',prod,'var(--productive)'],['neutral',neutral,'var(--neutral-cat)'],['waste',waste,'var(--waste)']].forEach(([k,v,color]) => {
+        if (v<=0) return;
+        const seg = document.createElement('div');
+        seg.style.background = color; seg.style.width = (100*v/grand)+'%'; seg.style.height='100%';
+        compareBar.appendChild(seg);
+      });
+    }
+
+    // delta vs previous period
+    const spanLen = e - s;
+    const prevTotals = aggregate(s - spanLen, s);
+    let prevProd=0, prevWaste=0;
+    categories.forEach(c => { const v = prevTotals[c.id]||0; if (c.type==='productive') prevProd+=v; else if (c.type==='waste') prevWaste+=v; });
+    const note = document.getElementById('deltaNote');
+    if (prevProd===0 && prevWaste===0 && prod===0 && waste===0){ note.textContent=''; }
+    else {
+      const prodDelta = prod - prevProd, wasteDelta = waste - prevWaste;
+      note.innerHTML = `Vs. previous period: productive time <b>${prodDelta>=0?'+':''}${fmtMin(Math.abs(prodDelta))}</b>, wasted time <b>${wasteDelta>=0?'+':''}${fmtMin(Math.abs(wasteDelta))}</b>.`;
+    }
+
+    // per-category bars
+    const bars = document.getElementById('statBars');
+    bars.innerHTML = '';
+    const maxVal = Math.max(1, ...categories.map(c => totals[c.id]||0));
+    categories.filter(c => (totals[c.id]||0) > 0 || c.goal).forEach(c => {
+      const v = totals[c.id]||0;
+      const row = document.createElement('div'); row.className = 'stat-bar-row';
+      const goalText = c.goal ? ` / goal ${fmtMin(c.goal*60000)}` : '';
+      row.innerHTML = `
+        <div class="top"><span class="name">${c.name}</span><span class="val">${fmtMin(v)}${goalText}</span></div>
+        <div class="stat-bar-track"><div class="stat-bar-fill" style="width:${Math.min(100,100*v/(c.goal?c.goal*60000:maxVal))}%;background:${c.color}"></div></div>
+      `;
+      bars.appendChild(row);
+    });
+    if (!bars.children.length) bars.innerHTML = '<div class="empty-state">Nothing tracked in this period.</div>';
+
+    renderHeatmap();
+  }
+
+  function renderHeatmap(){
+    const grid = document.getElementById('heatmapGrid');
+    const label = document.getElementById('heatmapLabel');
+    grid.innerHTML = '';
+    const d = new Date(statAnchor);
+    let monthStart, monthEnd, title;
+    if (statPeriod === 'year'){
+      monthStart = new Date(d.getFullYear(),0,1).getTime();
+      monthEnd = new Date(d.getFullYear()+1,0,1).getTime();
+      title = 'Months this year';
+      // render 12 month cells instead
+      let cursor = monthStart;
+      while (cursor < monthEnd){
+        const nextM = new Date(new Date(cursor).getFullYear(), new Date(cursor).getMonth()+1, 1).getTime();
+        const capped = Math.min(nextM, Date.now());
+        const totals = capped > cursor ? aggregate(cursor, capped) : {};
+        let p=0,w=0; categories.forEach(c => { const v=totals[c.id]||0; if(c.type==='productive')p+=v; else if(c.type==='waste')w+=v; });
+        const cell = document.createElement('div'); cell.className='heat-cell';
+        cell.style.background = cellColor(p,w);
+        cell.textContent = new Date(cursor).toLocaleDateString([], {month:'short'});
+        grid.appendChild(cell);
+        cursor = nextM;
+      }
+      label.textContent = title;
+      return;
+    }
+    monthStart = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+    monthEnd = new Date(d.getFullYear(), d.getMonth()+1, 1).getTime();
+    title = new Date(monthStart).toLocaleDateString([], {month:'long', year:'numeric'});
+    label.textContent = title;
+    const firstDow = (new Date(monthStart).getDay()+6)%7; // Monday first
+    for (let i=0;i<firstDow;i++){ const pad = document.createElement('div'); pad.className='heat-cell pad'; grid.appendChild(pad); }
+    let cursor = monthStart;
+    while (cursor < monthEnd){
+      const capped = Math.min(addDays(cursor,1), Date.now());
+      const totals = capped > cursor ? aggregate(cursor, capped) : {};
+      let p=0,w=0; categories.forEach(c => { const v=totals[c.id]||0; if(c.type==='productive')p+=v; else if(c.type==='waste')w+=v; });
+      const cell = document.createElement('div'); cell.className = 'heat-cell';
+      cell.style.background = cursor > Date.now() ? 'transparent' : cellColor(p,w);
+      cell.textContent = new Date(cursor).getDate();
+      grid.appendChild(cell);
+      cursor = addDays(cursor,1);
+    }
+  }
+  function cellColor(prod, waste){
+    const total = prod + waste;
+    if (total === 0) return 'var(--surface-2)';
+    const ratio = prod/total; // 1 = all productive
+    if (ratio >= .66) return 'var(--productive)';
+    if (ratio <= .34) return 'var(--waste)';
+    return 'var(--neutral-cat)';
+  }
+
+  /* ---------------- Settings: categories ---------------- */
+  function renderSettings(){
+    const list = document.getElementById('catList');
+    list.innerHTML = '';
+    categories.forEach(c => {
+      const row = document.createElement('div'); row.className = 'cat-row';
+      row.innerHTML = `
+        <span class="dot" style="background:${c.color}"></span>
+        <div class="info"><div class="name">${c.name}</div><div class="type">${c.type}${c.goal?' · goal '+c.goal+'m/day':''}</div></div>
+        ${c.locked ? '' : '<button data-edit>✎</button>'}
+      `;
+      if (!c.locked) row.querySelector('[data-edit]').addEventListener('click', () => openCatModal(c));
+      list.appendChild(row);
+    });
+  }
+
+  let editingCatId = null, selectedType = 'productive', selectedColor = SWATCHES[0];
+  function openCatModal(cat){
+    editingCatId = cat ? cat.id : null;
+    document.getElementById('catModalTitle').textContent = cat ? 'Edit category' : 'New category';
+    document.getElementById('catName').value = cat ? cat.name : '';
+    document.getElementById('catGoal').value = cat && cat.goal ? cat.goal : '';
+    selectedType = cat ? cat.type : 'productive';
+    selectedColor = cat ? cat.color : SWATCHES[Math.floor(Math.random()*SWATCHES.length)];
+    renderTypeToggle(); renderSwatches();
+    document.getElementById('catDelete').style.display = cat ? 'block' : 'none';
+    document.getElementById('catModal').classList.add('active');
+  }
+  function renderTypeToggle(){
+    document.querySelectorAll('#catTypeToggle button').forEach(b => {
+      const active = b.dataset.type === selectedType;
+      b.classList.toggle('sel', active);
+      b.style.background = active ? (b.dataset.type==='productive'?'var(--productive)':b.dataset.type==='waste'?'var(--waste)':'var(--neutral-cat)') : '';
+    });
+  }
+  document.getElementById('catTypeToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    selectedType = btn.dataset.type; renderTypeToggle();
+  });
+  function renderSwatches(){
+    const wrap = document.getElementById('catSwatches');
+    wrap.innerHTML = '';
+    SWATCHES.forEach(color => {
+      const sw = document.createElement('div');
+      sw.className = 'swatch' + (color === selectedColor ? ' sel' : '');
+      sw.style.background = color;
+      sw.addEventListener('click', () => { selectedColor = color; renderSwatches(); });
+      wrap.appendChild(sw);
+    });
+  }
+  document.getElementById('catCancel').addEventListener('click', () => document.getElementById('catModal').classList.remove('active'));
+  document.getElementById('catSave').addEventListener('click', () => {
+    const name = document.getElementById('catName').value.trim();
+    if (!name){ toast('Name is required'); return; }
+    const goal = parseInt(document.getElementById('catGoal').value) || null;
+    if (editingCatId){
+      const c = categories.find(x => x.id === editingCatId);
+      c.name = name; c.type = selectedType; c.color = selectedColor; c.goal = goal;
+    } else {
+      categories.push({ id: 'c_'+uid(), name, type: selectedType, color: selectedColor, goal });
+    }
+    save(LS_CATS, categories);
+    document.getElementById('catModal').classList.remove('active');
+    toast('Category saved');
+    renderAll();
+  });
+  document.getElementById('catDelete').addEventListener('click', () => {
+    if (!confirm('Delete this category? Its past blocks will be reassigned to Untracked.')) return;
+    categories = categories.filter(c => c.id !== editingCatId);
+    blocks.forEach(b => { if (b.categoryId === editingCatId) b.categoryId = 'untracked'; });
+    if (current.categoryId === editingCatId) current.categoryId = 'untracked';
+    save(LS_CATS, categories); save(LS_BLOCKS, blocks); save(LS_CURRENT, current);
+    document.getElementById('catModal').classList.remove('active');
+    toast('Category deleted');
+    renderAll();
+  });
+  document.getElementById('addCatBtn').addEventListener('click', () => openCatModal(null));
+
+  /* ---------------- Export / Import / Reset ---------------- */
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    const payload = { categories, blocks, current, exportedAt: new Date().toISOString(), version: 1 };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `flowtime-backup-${dayKey(Date.now())}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast('Backup downloaded');
+  });
+  document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
+  document.getElementById('importFile').addEventListener('change', (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data.categories || !data.blocks) throw new Error('Invalid file');
+        if (!confirm('This will replace all current data with the backup. Continue?')) return;
+        categories = data.categories; blocks = data.blocks; current = data.current || { categoryId: 'untracked', start: Date.now() };
+        save(LS_CATS, categories); save(LS_BLOCKS, blocks); save(LS_CURRENT, current);
+        toast('Backup restored');
+        renderAll();
+      } catch(err){ toast('Could not read that file'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    if (!confirm('This deletes all categories and tracked time on this device. This cannot be undone. Continue?')) return;
+    categories = DEFAULT_CATEGORIES.slice(); blocks = []; current = { categoryId: 'untracked', start: Date.now() };
+    save(LS_CATS, categories); save(LS_BLOCKS, blocks); save(LS_CURRENT, current);
+    toast('All data reset');
+    renderAll();
+  });
+
+  /* ---------------- Render all ---------------- */
+  function renderAll(){
+    renderTimer();
+    renderChipGrid();
+    renderTodayRibbon();
+    const active = document.querySelector('.screen.active').id.replace('screen-','');
+    if (active === 'history') renderHistory();
+    if (active === 'stats') renderStats();
+    if (active === 'settings') renderSettings();
+  }
+  renderAll();
+  setInterval(renderTodayRibbon, 15000);
+
+  /* ---------------- Service worker ---------------- */
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+})();
+</script>
+</body>
+</html>
